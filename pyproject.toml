@@ -1,0 +1,11 @@
+[build-system]
+# Build dependencies. These are installed into an isolated environment before
+# the package is built, so Cython and numpy are guaranteed to be available when
+# setup.py runs (numpy is needed for its C headers / get_include()).
+requires = [
+    "setuptools>=64",
+    "wheel",
+    "Cython>=3.0",
+    "numpy>=2.0",
+]
+build-backend = "setuptools.build_meta"

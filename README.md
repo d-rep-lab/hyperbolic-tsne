@@ -28,27 +28,38 @@ Please find the published version of the paper [here](https://ieeexplore.ieee.or
 
 To execute this setup procedure, we assume that you have a C++ compiler installed on your system that supports at least C++11 and OpenMP.
 
-You can set up the repository by building the provided Docker file calling `docker build --tag 'hyperbolic-tsne' .` in the folder where you cloned the repository. Alternatively, you can perform the following steps yourself:
+The package supports Python 3.9 through 3.14. It builds against modern toolchains (numpy 2.x, Cython 3.x); see the [Updates](#updates) section for details on what changed.
 
-1. Install conda (we recommend using [miniconda](https://docs.conda.io/projects/miniconda/en/latest/))
-2. Create environment: `conda create --name=htsne python=3.9.16`
-3. Activate environment: `conda activate htsne`
-4. Install dependencies with pip: `pip install -r requirements.txt`
-5. Build Cython extensions: `python setup.py build_ext --inplace`
-6. Install hyperbolic-tsne package: `pip install .`
-7. To test installation run `python -c "from hyperbolicTSNE import HyperbolicTSNE"`. No errors should be raised and you should see the output `Please note that 'empty_sequence' uses the KL divergence with Barnes-Hut approximation (angle=0.5) by default.`.
-8. To re-create the teaser image of this repository, run `python experiments_and_plots/plot_tree_teaser.py` which will read the embedding data and labels from the `teaser_files` folder, plot the teaser image, and save it to the `teaser_files` folder.
+1. Create and activate a virtual environment with Python `>=3.9` (we test on 3.14):
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate    # on Windows: .venv\Scripts\activate
+   ```
+   A conda environment (`conda create --name=htsne python=3.14 && conda activate htsne`) works equally well; use whichever you prefer.
+2. Install dependencies with pip: `pip install -r requirements.txt`
+3. Install the hyperbolic-tsne package: `pip install .` (this compiles the Cython extensions automatically; the build dependencies in `pyproject.toml` are installed in an isolated build environment). For development, use an editable install instead: `pip install -e .`.
+4. To test installation run `python -c "from hyperbolicTSNE import HyperbolicTSNE"`. No errors should be raised and you should see the output `Please note that 'empty_sequence' uses the KL divergence with Barnes-Hut approximation (angle=0.5) by default.`.
+5. To re-create the teaser image of this repository, `cd experiments_and_plots` and run `python plot_tree_teaser.py`. The script reads the embedding data and labels from the `teaser_files` folder, plots the teaser image, and saves it to the `teaser_files` folder. It uses paths relative to the `experiments_and_plots` folder, so it must be run from inside that folder.
 
-Note 1: 
-On macOS, the build process of the Cython extensions might yield an error if it cannot find OpenMP.
-This error can be ignored and the package will still be correctly installed and able to run. 
-The main consequence of this error is that the optimization iterations run slower.
+Note 1:
+On macOS, Apple's `clang` does not ship with OpenMP. The build detects a Homebrew `libomp` installation automatically (`brew install libomp`) and enables OpenMP if it is found; otherwise it falls back to a single-threaded build, which is correct but slower during the optimization iterations. You can force-disable OpenMP by setting the `HYPERBOLIC_TSNE_NO_OPENMP` environment variable before installing.
 
 Note 2:
 When replicating the teaser image of the repository, depending on your random choice, the image you create might highlight a different point in the left embedding than what is shown in the teaser.
 We encourage you to change the seed and render several such images.
 The right-hand side will always show the same embedding, but the left-hand side will give you the query structure of the tree for different vertices.
 Thereby, you can see which regions are approximated (showing larger cells of the polar quadtree) and which are drilling down to the individual points (showing smaller cells of the polar quadtree).
+
+## Updates
+
+The build was modernized to make the package installable on current Python versions (tested on **Python 3.14**), which required moving off the toolchain the original code targeted:
+
+- **Build system (`setup.py`, new `pyproject.toml`).** Removed the `distutils` imports, which no longer exist in Python 3.12+. Added a `pyproject.toml` declaring the build dependencies (`setuptools`, `wheel`, `Cython>=3.0`, `numpy>=2.0`) so they are available in an isolated build environment. `setup.py` now runs the `.pyx` sources through `Cython.Build.cythonize` (the previous build step that invoked Cython was commented out, so the extensions were never actually compiled) and wires up numpy's C headers and cross-platform OpenMP flags. A separate `python setup.py build_ext --inplace` step is no longer needed — `pip install .` builds everything.
+- **Cython 3 compatibility (`.pyx` sources).** Python 3.14 needs Cython 3.x, which is stricter than the Cython 0.29 the code was written for. In `hyperbolicTSNE/hyperbolic_barnes_hut/tsne.pyx`, `2 ** self.n_dimensions` now yields a `double` (Python semantics) and no longer assigns to an integer field, so it was rewritten as `<SIZE_t>(1 << self.n_dimensions)`.
+- **numpy 2.x compatibility (`.pyx` sources).** `np.NPY_DEFAULT`, used when wrapping the quadtree as a NumPy struct array, was removed from numpy 2.0. It was replaced with `np.NPY_ARRAY_DEFAULT`, the modern constant declared in numpy's Cython `.pxd` (which also lets Cython inline it as a C constant instead of a runtime attribute lookup).
+- **Dependencies (`requirements.txt`, `extras_require`).** The old exact pins (`numpy==1.23.5`, `scipy==1.10.0`, `Cython==0.29.33`, `hnswlib==0.7.0`, ...) have no wheels for Python 3.14 and could not be built. They were relaxed to minimum-version bounds that provide 3.14 wheels.
+- **Teaser script usage.** `experiments_and_plots/plot_tree_teaser.py` uses paths relative to its own folder, so it is now documented to be run from inside `experiments_and_plots`.
+- **Removed the Dockerfile.** It targeted the old toolchain (pinned Python 3.9.16 and the deprecated `setup.py build_ext` step) and no longer matched the relaxed dependency bounds. The `venv`/conda + pip instructions above are the supported setup path.
 
 ## Data
 

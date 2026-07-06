@@ -1,178 +1,78 @@
 import os
 import platform
-import sys
-import tempfile
-import warnings
-from distutils import ccompiler
-from distutils.errors import CompileError, LinkError
-from distutils.sysconfig import customize_compiler
-from os.path import join
 
+import numpy
 import setuptools
 from setuptools import setup, Extension
 
-########################
-# TODO: Taken from https://github.com/pavlin-policar/openTSNE/blob/master/setup.py
-########################
+from Cython.Build import cythonize
 
-try:
-    from Cython.Distutils.build_ext import new_build_ext as build_ext
-    have_cython = True
-except ImportError:
-    have_cython = False
+# numpy and Cython are guaranteed to be importable here because they are
+# declared as build dependencies in pyproject.toml's [build-system] table.
+numpy_include = numpy.get_include()
 
 
-class get_numpy_include:
-    """Helper class to determine the numpy include path
+def get_openmp_flags():
+    """Return ``(extra_compile_args, extra_link_args)`` enabling OpenMP.
 
-    The purpose of this class is to postpone importing numpy until it is
-    actually installed, so that the ``get_include()`` method can be invoked.
-
+    OpenMP is used by the Cython extensions (``prange``) to run on multiple
+    cores. It can be disabled by setting the ``HYPERBOLIC_TSNE_NO_OPENMP``
+    environment variable, which is useful on platforms where an OpenMP runtime
+    is not available. Without OpenMP the extensions still build and work, they
+    just run single-threaded.
     """
-    def __str__(self):
-        import numpy
-        return numpy.get_include()
+    if os.environ.get("HYPERBOLIC_TSNE_NO_OPENMP"):
+        return [], []
+
+    system = platform.system()
+
+    if system == "Windows":
+        return ["/openmp"], []
+
+    if system == "Darwin":
+        # Apple's clang needs a separately-installed libomp (e.g. via
+        # `brew install libomp`). Only enable OpenMP if we can find it,
+        # otherwise linking would fail.
+        for prefix in ("/opt/homebrew/opt/libomp", "/usr/local/opt/libomp"):
+            if os.path.isdir(prefix):
+                return (
+                    ["-Xpreprocessor", "-fopenmp", f"-I{prefix}/include"],
+                    [f"-L{prefix}/lib", "-lomp"],
+                )
+        return [], []
+
+    # Linux / other unix: gcc and clang support -fopenmp out of the box.
+    return ["-fopenmp"], ["-fopenmp"]
 
 
-def get_include_dirs():
-    """Get include dirs for the compiler."""
-    return (
-        os.path.join(sys.prefix, "include"),
-        os.path.join(sys.prefix, "Library", "include"),
-    )
+openmp_compile_args, openmp_link_args = get_openmp_flags()
 
+extra_compile_args = ["-O3"] + openmp_compile_args
+extra_link_args = list(openmp_link_args)
 
-def get_library_dirs():
-    """Get library dirs for the compiler."""
-    return (
-        os.path.join(sys.prefix, "lib"),
-        os.path.join(sys.prefix, "Library", "lib"),
-    )
-
-
-def has_c_library(library, extension=".c"):
-    """Check whether a C/C++ library is available on the system to the compiler.
-
-    Parameters
-    ----------
-    library: str
-        The library we want to check for e.g. if we are interested in FFTW3, we
-        want to check for `fftw3.h`, so this parameter will be `fftw3`.
-    extension: str
-        If we want to check for a C library, the extension is `.c`, for C++
-        `.cc`, `.cpp` or `.cxx` are accepted.
-
-    Returns
-    -------
-    bool
-        Whether or not the library is available.
-
-    """    
-    with tempfile.TemporaryDirectory(dir=".") as directory:
-        name = join(directory, "%s%s" % (library, extension))
-        print(name)
-        with open(name, "w") as f:
-            f.write("#include <%s.h>\n" % library)
-            f.write("int main() {}\n")
-
-        # Get a compiler instance
-        compiler = ccompiler.new_compiler()
-        # Configure compiler to do all the platform specific things
-        customize_compiler(compiler)
-        # Add conda include dirs
-        for inc_dir in get_include_dirs():
-            compiler.add_include_dir(inc_dir)
-        assert isinstance(compiler, ccompiler.CCompiler)
-
-        try:
-            # Try to compile the file using the C compiler
-            compiler.link_executable(compiler.compile([name]), name)
-            return True
-        except (CompileError, LinkError):
-            return False
-
-
-class CythonBuildExt(build_ext):
-    def build_extensions(self):
-        if not have_cython:
-            raise RuntimeError("Missing build dependency: Cython")
-
-        extra_compile_args = []
-        extra_link_args = []
-
-        # Optimization compiler/linker flags are added appropriately
-        compiler = self.compiler.compiler_type
-        if compiler == "unix":
-            extra_compile_args += ["-O3"]
-        elif compiler == "msvc":
-            extra_compile_args += ["/Ox", "/fp:fast"]
-
-        if compiler == "unix":
-            # https://stackoverflow.com/questions/22931147/stdisinf-does-not-work-with-ffast-math-how-to-check-for-infinity
-            extra_compile_args += [
-                "-ffast-math",
-                "-fno-finite-math-only",  # we use infinity
-                "-fno-associative-math",
-            ]
-
-        # Set minimum deployment version for MacOS
-        if compiler == "unix" and platform.system() == "Darwin":
-            extra_compile_args += ["-mmacosx-version-min=10.12"]
-            extra_link_args += ["-stdlib=libc++", "-mmacosx-version-min=10.12"]
-
-        # We don't want the compiler to optimize for system architecture if
-        # we're building packages to be distributed by conda-forge, but if the
-        # package is being built locally, this is desired
-        if not ("AZURE_BUILD" in os.environ or "CONDA_BUILD" in os.environ):
-            if platform.machine() == "ppc64le":
-                extra_compile_args += ["-mcpu=native"]
-            if platform.machine() == "x86_64":
-                extra_compile_args += ["-march=native"]
-
-        # We will disable openmp flags if the compiler doesn"t support it. This
-        # is only really an issue with OSX clang
-        if has_c_library("omp"):
-            print("Found openmp. Compiling with openmp flags...")
-            if platform.system() == "Darwin" and compiler == "unix":
-                extra_compile_args += ["-Xpreprocessor", "-fopenmp"]
-                extra_link_args += ["-lomp"]
-            elif compiler == "unix":
-                extra_compile_args += ["-fopenmp"]
-                extra_link_args += ["-fopenmp"]
-            elif compiler == "msvc":
-                extra_compile_args += ["/openmp"]
-                extra_link_args += ["/openmp"]
-        else:
-            warnings.warn(
-                "You appear to be using a compiler which does not support "
-                "openMP, meaning that the library will not be able to run on "
-                "multiple cores. Please install/enable openMP to use multiple "
-                "cores."
-            )
-
-        for extension in self.extensions:
-            extension.extra_compile_args += extra_compile_args
-            extension.extra_link_args += extra_link_args
-
-        # Add numpy and system include directories
-        for extension in self.extensions:
-            extension.include_dirs.extend(get_include_dirs())
-            extension.include_dirs.append(get_numpy_include())
-
-        # Add numpy and system include directories
-        for extension in self.extensions:
-            extension.library_dirs.extend(get_library_dirs())
-
-        super().build_extensions()
-
+# Suppress the noisy "using deprecated NumPy API" warnings without switching to
+# an API version the code does not target.
+define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
 
 extensions = [
-    Extension("hyperbolicTSNE.hyperbolic_barnes_hut.tsne_utils",
-              sources=["hyperbolicTSNE/hyperbolic_barnes_hut/tsne_utils.pyx"],
-              language="c++"),
-    Extension("hyperbolicTSNE.hyperbolic_barnes_hut.tsne",
-              sources=["hyperbolicTSNE/hyperbolic_barnes_hut/tsne.pyx"],
-              language="c++"),
+    Extension(
+        "hyperbolicTSNE.hyperbolic_barnes_hut.tsne_utils",
+        sources=["hyperbolicTSNE/hyperbolic_barnes_hut/tsne_utils.pyx"],
+        language="c++",
+        include_dirs=[numpy_include],
+        define_macros=define_macros,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+    ),
+    Extension(
+        "hyperbolicTSNE.hyperbolic_barnes_hut.tsne",
+        sources=["hyperbolicTSNE/hyperbolic_barnes_hut/tsne.pyx"],
+        language="c++",
+        include_dirs=[numpy_include],
+        define_macros=define_macros,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+    ),
 ]
 
 
@@ -185,6 +85,7 @@ setup(
     name="hyperbolic-tsne",
     description="Hyperbolic implementation of t-SNE",
     long_description=readme(),
+    long_description_content_type="text/markdown",
     version="0.1.0",
     # license="BSD-3-Clause",
     # author="Hunter van Geffen",
@@ -206,17 +107,13 @@ setup(
         "Topic :: Scientific/Engineering :: Visualization",
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
-
     packages=setuptools.find_packages(include=["hyperbolicTSNE", "hyperbolicTSNE.*"]),
-    python_requires=">=3.6",
+    python_requires=">=3.9",
     install_requires=[
         "numpy>=1.21",
         "scikit-learn>=0.20",
         "scipy",
-        "tqdm"
-    ],
-    setup_requires=[
-        "cython",
+        "tqdm",
     ],
     extras_require={
         "plot": [
@@ -225,9 +122,11 @@ setup(
             "seaborn",
         ],
         "anndata": "anndata",
-        "hnsw": "hnswlib~=0.4.0",
-        "pynndescent": "pynndescent~=0.5.0",
+        "hnsw": "hnswlib>=0.8.0",
+        "pynndescent": "pynndescent>=0.5.0",
     },
-    ext_modules=extensions,
-    cmdclass={"build_ext": CythonBuildExt},
+    ext_modules=cythonize(
+        extensions,
+        compiler_directives={"language_level": "3"},
+    ),
 )

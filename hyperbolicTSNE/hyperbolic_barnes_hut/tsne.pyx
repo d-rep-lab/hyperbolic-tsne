@@ -207,7 +207,7 @@ cdef class _QuadTree:
         # Parameters of the tree
         self.n_dimensions = n_dimensions
         self.verbose = verbose
-        self.n_cells_per_cell = 2 ** self.n_dimensions
+        self.n_cells_per_cell = <SIZE_t>(1 << self.n_dimensions)
 
         # Inner structures
         self.max_depth = 0
@@ -746,7 +746,7 @@ cdef class _QuadTree:
         arr = PyArray_NewFromDescr(<PyTypeObject *> np.ndarray,
                                    CELL_DTYPE, 1, shape,
                                    strides, <void*> self.cells,
-                                   np.NPY_DEFAULT, None)
+                                   np.NPY_ARRAY_DEFAULT, None)
         Py_INCREF(self)
         if PyArray_SetBaseObject(arr, <PyObject*> self) < 0:
             raise ValueError("Can't initialize array!")
