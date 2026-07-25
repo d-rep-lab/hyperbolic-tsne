@@ -12,7 +12,8 @@ import pandas as pd
 import seaborn as sns
 from hyperbolicTSNE.hyperbolic_barnes_hut.tsne import _QuadTree
 from hyperbolicTSNE.hyperbolic_barnes_hut.tsne import distance_py
-
+import sys
+print("Script is using:", sys.executable)
 ##############
 # PLOT SETUP #
 ##############

@@ -142,9 +142,9 @@ class HyperbolicTSNE(BaseEstimator):
                     "`metric` is precomputed, so X should be the tuple (D, V) with at least the distance matrix D")
             D = None
             V = None
-            X = self._validate_data(X, accept_sparse=['csr'],
-                                    ensure_min_samples=2,
-                                    dtype=[np.float32, np.float64])
+            #X = self._validate_data(X, accept_sparse=['csr'],
+            #                        ensure_min_samples=2,
+            #                        dtype=[np.float32, np.float64])
         else:
             if self.metric != "precomputed":
                 raise ValueError(
@@ -173,9 +173,9 @@ class HyperbolicTSNE(BaseEstimator):
                             "[HyperbolicTSNE] D should be a square distance matrix")
                     check_non_negative(D, "HyperbolicTSNE.fit(). With hd_params.metric='precomputed', X[0] "
                                           "should contain positive distances.")
-                    D = self._validate_data(D, accept_sparse=['csr'],
-                                            ensure_min_samples=2,
-                                            dtype=[np.float32, np.float64])
+                   # D = self._validate_data(D, accept_sparse=['csr'],
+                   #                         ensure_min_samples=2,
+                   #                         dtype=[np.float32, np.float64])
                 else:
                     print(
                         "[HyperbolicTSNE] Warning: D matrix is None, make sure this is supported by the optimizer")
@@ -185,9 +185,9 @@ class HyperbolicTSNE(BaseEstimator):
                             "[HyperbolicTSNE] V should be a square distance matrix")
                     check_non_negative(V, "HyperbolicTSNE.fit(). With hd_params.metric='precomputed', X[1] "
                                           "should contain positive distances.")
-                    V = self._validate_data(V, accept_sparse=['csr'],
-                                            ensure_min_samples=2,
-                                            dtype=[np.float32, np.float64])
+                   # V = self._validate_data(V, accept_sparse=['csr'],
+                   #                         ensure_min_samples=2,
+                   #                         dtype=[np.float32, np.float64])
                 else:
                     print(
                         "[HyperbolicTSNE] Warning: V matrix is None, make sure this is supported by the optimizer")
