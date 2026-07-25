@@ -1,3 +1,11 @@
+import os
+
+# This htsne build scales negatively with OpenMP threads on macOS (memory-bound
+# attractive-force loop). Single-threaded is ~90x faster here, so cap threads
+# before numpy / the compiled extension is imported.
+# For your environment, you can try different numbers here or you can comment this out
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import matplotlib.pyplot as plt
 
 from sklearn import datasets
@@ -18,6 +26,7 @@ learning_rate = (X.shape[0] * 1) / (exaggeration_factor * 1000)
 ex_iterations = 250
 # ... followed by 750 iterations of non-exaggerated gradient descent.
 main_iterations = 750
+
 opt_config = dict(
     learning_rate_ex=learning_rate,  # learning rate during exaggeration
     learning_rate_main=learning_rate,  # learning rate main optimization
@@ -34,8 +43,8 @@ opt_config = dict(
 )
 opt_params = SequentialOptimizer.sequence_poincare(**opt_config)
 
-htsne = HyperbolicTSNE(opt_params=opt_params)
+htsne = HyperbolicTSNE(init="pca", opt_params=opt_params)
 hyperbolicEmbedding = htsne.fit_transform(X)
 
-fig = plot_poincare(hyperbolicEmbedding, sr_color)
+fig = plot_poincare(hyperbolicEmbedding, sr_color, cmap="viridis")
 plt.show()

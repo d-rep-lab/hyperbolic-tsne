@@ -15,12 +15,12 @@ from tqdm import tqdm
 from hyperbolicTSNE import Datasets
 
 
-def plot_poincare(points, labels=None):
+def plot_poincare(points, labels=None, cmap="tab10"):
     fig, ax = plt.subplots()
     ax.scatter(points[:, 0], points[:, 1],
                c=labels,
                marker=".",
-               cmap="tab10")
+               cmap=cmap)
     ax.add_patch(plt.Circle((0, 0), radius=1, edgecolor="b", facecolor="None"))
     ax.axis("square")
     return fig
