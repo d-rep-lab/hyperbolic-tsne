@@ -1,0 +1,63 @@
+import os
+
+# This htsne build scales negatively with OpenMP threads on macOS (memory-bound
+# attractive-force loop). Single-threaded is ~90x faster here, so cap threads
+# before numpy / the compiled extension is imported.
+# For your environment, you can try different numbers here or you can comment this out
+os.environ["OMP_NUM_THREADS"] = "1"
+
+import matplotlib.pyplot as plt
+from matplotlib import colormaps
+
+from sklearn import datasets
+from hyperbolicTSNE import (
+    SequentialOptimizer,
+    HyperbolicTSNE,
+)
+from hyperbolicTSNE.visualization import plot_poincare
+from hyperbolicTSNE.data_loaders import load_mnist
+
+data_home = os.path.abspath(os.curdir) + "\\datasets\\"
+
+mnist_data = load_mnist(data_home, return_X_y = False)
+sr_data, sr_color = datasets.make_swiss_roll(n_samples=1500, random_state=0)
+iris_data = datasets.load_iris(return_X_y=False, as_frame=False).data
+wine_data = datasets.load_wine(return_X_y=False, as_frame=False).data
+
+# Optimizer setting following the original htsne repo
+# Just like regular t-SNE, we use early exaggeration with a factor of 12
+exaggeration_factor = 12
+# We adjust the learning rate to the hyperbolic setting
+learning_rate = (sr_data.shape[0] * 1) / (exaggeration_factor * 1000)
+# The embedder is to execute 250 iterations of early exaggeration, ...
+ex_iterations = 250
+# ... followed by 750 iterations of non-exaggerated gradient descent.
+main_iterations = 750
+
+opt_config = dict(
+    learning_rate_ex=learning_rate,  # learning rate during exaggeration
+    learning_rate_main=learning_rate,  # learning rate main optimization
+    exaggeration=exaggeration_factor,
+    exaggeration_its=ex_iterations,
+    gradientDescent_its=main_iterations,
+    vanilla=False,  # if vanilla is set to true, regular gradient descent without any modifications is performed; for  vanilla set to false, the optimization makes use of momentum and gains
+    momentum_ex=0.5,  # Set momentum during early exaggeration to 0.5
+    momentum=0.8,  # Set momentum during non-exaggerated gradient descent to 0.8
+    exact=False,  # To use the quad tree for acceleration (like Barnes-Hut in the Euclidean setting) or to evaluate the gradient exactly
+    area_split=False,  # To build or not build the polar quad tree based on equal area splitting or - alternatively - on equal length splitting
+    n_iter_check=10,  # Needed for early stopping criterion
+    size_tol=0.999,  # Size of the embedding to be used as early stopping criterion
+)
+opt_params = SequentialOptimizer.sequence_poincare(**opt_config)
+
+htsne = HyperbolicTSNE(init="pca", opt_params=opt_params)
+sr_hyperbolicEmbedding = htsne.fit_transform(sr_data)
+iris_hyperbolicEmbedding = htsne.fit_transform(iris_data)
+wine_hyperbolicEmbedding = htsne.fit_transform(wine_data)
+mnist_hyperbolicEmbedding = htsne.fit_transform(mnist_data)
+
+sr_fig = plot_poincare(sr_hyperbolicEmbedding, sr_color)
+iris_fig = plot_poincare(iris_hyperbolicEmbedding)
+wine_fig = plot_poincare(wine_hyperbolicEmbedding)
+mnist_fig = plot_poincare(mnist_data)
+plt.show()
